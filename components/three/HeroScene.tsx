@@ -80,8 +80,8 @@ export default function HeroScene() {
             reduced={reduced}
             scroll={scroll}
             pointer={pointer}
-            offset={mobile ? [0, 0.5, 0] : [1.35, 0.15, 0]}
-            scale={mobile ? 0.5 : 0.66}
+            offset={mobile ? [0, 0.35, 0] : [1.4, 0.1, 0]}
+            scale={mobile ? 0.42 : 0.55}
           />
         </Suspense>
       </Canvas>
