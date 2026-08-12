@@ -2,14 +2,17 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import RibCage from './RibCage';
-import Dust from './Dust';
+import SkeletonModel from './SkeletonModel';
 import SceneFallback from './SceneFallback';
 
 /**
- * Hero-сцена. Камера и объект реагируют на курсор с инерцией,
- * скролл разворачивает грудную клетку. На мобильных сцена
- * упрощается: без bloom, без пылинок, ниже dpr.
+ * Hero-сцена. Модель реагирует на курсор с инерцией, скролл
+ * доворачивает её и уводит вниз.
+ *
+ * Бюджет производительности: здесь намеренно нет постпроцессинга,
+ * HDR-окружения и преломляющего материала — они давали основную
+ * нагрузку на кадр. Объём даёт свет: холодный ключевой, тёплый
+ * заполняющий и контровой.
  */
 export default function HeroScene() {
   const [ready, setReady] = useState(false);
@@ -29,9 +32,15 @@ export default function HeroScene() {
     setMobile(window.matchMedia('(max-width: 767px)').matches);
     setReady(true);
 
+    let frame = 0;
     const onPointer = (event: PointerEvent) => {
-      pointer.current.x = (event.clientX / window.innerWidth) * 2 - 1;
-      pointer.current.y = (event.clientY / window.innerHeight) * 2 - 1;
+      // Читаем указатель через rAF: событие может прилетать чаще кадра
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        pointer.current.x = (event.clientX / window.innerWidth) * 2 - 1;
+        pointer.current.y = (event.clientY / window.innerHeight) * 2 - 1;
+        frame = 0;
+      });
     };
     const onScroll = () => {
       scroll.current = Math.min(window.scrollY / Math.max(window.innerHeight, 1), 1);
@@ -42,6 +51,7 @@ export default function HeroScene() {
     onScroll();
 
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       window.removeEventListener('pointermove', onPointer);
       window.removeEventListener('scroll', onScroll);
     };
@@ -52,31 +62,27 @@ export default function HeroScene() {
   return (
     <div className="absolute inset-0">
       <Canvas
-        dpr={mobile ? [1, 1.4] : [1, 1.8]}
+        dpr={mobile ? [1, 1.3] : [1, 1.6]}
         gl={{ antialias: !mobile, alpha: true, powerPreference: 'high-performance' }}
-        camera={{ position: [0, 0, 6.4], fov: 38 }}
+        camera={{ position: [0, 0, 6.2], fov: 38 }}
         frameloop={reduced ? 'demand' : 'always'}
       >
-        <color attach="background" args={['#FCFBF7']} />
-        <fog attach="fog" args={['#FCFBF7', 9, 17]} />
-
-        {/* Мягкий верхний свет витрины плюс холодная подсветка снизу */}
-        <ambientLight intensity={1.5} />
-        <directionalLight position={[3.5, 5, 4]} intensity={2.4} color="#FFFDF8" />
-        <directionalLight position={[-4, 1.5, 2]} intensity={1.1} color="#DCEAF4" />
-        <pointLight position={[0, -3, 1.5]} intensity={14} color="#8CC0E4" />
+        <ambientLight intensity={1.15} />
+        {/* Холодный ключевой — «негатоскоп» */}
+        <directionalLight position={[3.5, 3.5, 4]} intensity={2.4} color="#FFFFFF" />
+        {/* Тёплый заполняющий — латунь музейной витрины */}
+        <directionalLight position={[-4, -1, 2]} intensity={0.9} color="#EFE3CE" />
+        {/* Контровой холодный: отделяет кость от светлого фона */}
+        <directionalLight position={[-1.5, 2, -4]} intensity={1.5} color="#9FC4E4" />
 
         <Suspense fallback={null}>
-          <RibCage
+          <SkeletonModel
             reduced={reduced}
-            simple={mobile}
             scroll={scroll}
             pointer={pointer}
-            /* На узком экране объект уходит вверх и уменьшается — под заголовок */
-            offset={mobile ? [0, 1.15, 0] : [1.55, 0.25, 0]}
-            scale={mobile ? 0.6 : 1.0}
+            offset={mobile ? [0, 0.5, 0] : [1.35, 0.15, 0]}
+            scale={mobile ? 0.5 : 0.66}
           />
-          {!mobile && !reduced ? <Dust /> : null}
         </Suspense>
       </Canvas>
     </div>

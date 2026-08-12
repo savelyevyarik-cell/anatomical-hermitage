@@ -1,64 +1,36 @@
 'use client';
 
-import { useLayoutEffect, useRef } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { motion, useReducedMotion } from 'framer-motion';
 import Plate from '@/components/ui/Plate';
 import SplitText from '@/components/ui/SplitText';
 import { HALLS } from '@/lib/content';
 
 /**
- * «Залы музея» — pinned horizontal scroll. На десктопе секция
- * закрепляется и карточки едут вбок; на планшете и мобильном
- * это обычная вертикальная лента (переосмысление, а не сжатие).
+ * «Залы музея» — свободная редакционная сетка.
+ *
+ * Раньше здесь был pinned horizontal scroll: секция перехватывала
+ * прокрутку и держала страницу, пока карточки едут вбок. Это давало
+ * рывки (pin пересчитывает layout на каждом кадре) и не давало просто
+ * пролистать блок. Теперь каждая карточка живёт независимо: своя
+ * позиция в сетке, свой вертикальный сдвиг и свой триггер появления.
+ * Скролл страницы остаётся обычным.
  */
+
+// Раскладка на десктопе: колонка старта, ширина, вертикальный сдвиг, пропорции кадра
+const LAYOUT = [
+  { col: 'lg:col-start-1 lg:col-span-6', offset: 'lg:mt-0', ratio: 'lg:aspect-[4/5]' },
+  { col: 'lg:col-start-8 lg:col-span-5', offset: 'lg:mt-24', ratio: 'lg:aspect-[3/4]' },
+  { col: 'lg:col-start-2 lg:col-span-7', offset: 'lg:-mt-16', ratio: 'lg:aspect-[16/10]' },
+  { col: 'lg:col-start-9 lg:col-span-4', offset: 'lg:mt-8', ratio: 'lg:aspect-[3/4]' },
+  { col: 'lg:col-start-3 lg:col-span-6', offset: 'lg:mt-0', ratio: 'lg:aspect-[4/5]' },
+];
+
 export default function Halls() {
-  const root = useRef<HTMLDivElement>(null);
-  const track = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-
-    const ctx = gsap.context(() => {
-      const mm = gsap.matchMedia();
-
-      mm.add(
-        {
-          desktop: '(min-width: 1024px) and (prefers-reduced-motion: no-preference)',
-        },
-        () => {
-          const el = track.current;
-          if (!el) return;
-          const distance = () => el.scrollWidth - window.innerWidth + 96;
-
-          const tween = gsap.to(el, {
-            x: () => -distance(),
-            ease: 'none',
-            scrollTrigger: {
-              trigger: root.current,
-              start: 'top top',
-              end: () => `+=${distance() + window.innerHeight * 0.5}`,
-              pin: true,
-              scrub: 0.8,
-              invalidateOnRefresh: true,
-              anticipatePin: 1,
-            },
-          });
-
-          return () => {
-            tween.scrollTrigger?.kill();
-            tween.kill();
-          };
-        }
-      );
-    }, root);
-
-    return () => ctx.revert();
-  }, []);
+  const reduced = useReducedMotion();
 
   return (
-    <section ref={root} className="relative overflow-hidden bg-paper" aria-labelledby="halls-title">
-      <div className="shell pt-[var(--section-y)]">
+    <section className="section bg-paper" aria-labelledby="halls-title">
+      <div className="shell">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <p className="plaque mb-6 text-azure">Маршрут · 03</p>
@@ -72,46 +44,42 @@ export default function Halls() {
             и к его изображению на просвет
           </p>
         </div>
-      </div>
 
-      <div className="mt-16 pb-[var(--section-y)] lg:mt-20">
-        <div
-          ref={track}
-          className="flex flex-col gap-10 px-[var(--gutter)] lg:w-max lg:flex-row lg:gap-8 lg:will-change-transform"
-        >
-          {HALLS.map((hall) => (
-            <article
-              key={hall.index}
-              className="group relative flex w-full flex-col lg:h-[62vh] lg:w-[clamp(340px,32vw,520px)]"
-              data-cursor={hall.latin}
-            >
-              <div className="plate relative h-[52vh] w-full overflow-hidden lg:h-full">
-                <Plate
-                  src={hall.image}
-                  alt={hall.alt}
-                  className="absolute inset-0"
-                  sizes="(max-width: 1024px) 100vw, 32vw"
-                  imgClassName="object-cover transition-transform duration-[900ms] ease-museum group-hover:scale-[1.06]"
-                />
-                {/* Плотная светлая подложка снизу — этикетка должна читаться на любом кадре */}
-                <div className="absolute inset-0 z-[3] bg-gradient-to-t from-paper via-paper/85 via-40% to-transparent" />
+        <div className="mt-16 grid grid-cols-1 gap-14 lg:mt-24 lg:grid-cols-12 lg:gap-x-8 lg:gap-y-28">
+          {HALLS.map((hall, i) => {
+            const layout = LAYOUT[i] ?? LAYOUT[0];
+            return (
+              <motion.article
+                key={hall.index}
+                className={`group flex flex-col ${layout.col} ${layout.offset}`}
+                initial={reduced ? undefined : { opacity: 0, y: 48 }}
+                whileInView={reduced ? undefined : { opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-12% 0px -12% 0px' }}
+                transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+                data-cursor={hall.latin}
+              >
+                <div className={`plate relative aspect-[4/5] w-full overflow-hidden ${layout.ratio}`}>
+                  <Plate
+                    src={hall.image}
+                    alt={hall.alt}
+                    className="absolute inset-0"
+                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    imgClassName="object-cover transition-transform duration-[900ms] ease-museum group-hover:scale-[1.05]"
+                  />
+                </div>
 
-                <div className="absolute inset-x-0 bottom-0 z-[4] p-6 lg:p-7">
+                <div className="mt-6 flex flex-col">
                   <div className="flex items-baseline gap-4">
                     <span className="plaque text-azure">{hall.index}</span>
                     <span className="plaque text-slate/50">{hall.latin}</span>
                   </div>
                   <h3 className="mt-3 font-display text-h3 text-navy">{hall.title}</h3>
-                  <p className="mt-3 max-w-[40ch] text-small text-slate/75">{hall.summary}</p>
-
-                  {/* Раскрытие на hover — только там, где есть указатель */}
-                  <p className="mt-0 max-h-0 overflow-hidden text-small text-slate/60 opacity-0 transition-all duration-700 ease-museum group-hover:mt-4 group-hover:max-h-40 group-hover:opacity-100">
-                    {hall.detail}
-                  </p>
+                  <p className="mt-3 max-w-[46ch] text-small text-slate/75">{hall.summary}</p>
+                  <p className="mt-3 max-w-[46ch] text-small text-slate/55">{hall.detail}</p>
                 </div>
-              </div>
-            </article>
-          ))}
+              </motion.article>
+            );
+          })}
         </div>
       </div>
     </section>
