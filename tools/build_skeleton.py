@@ -360,6 +360,15 @@ def skull():
     cuts.append(cutter('cone', location=(0, 0.215, 1.675),
                        scale=(0.042, 0.042, 0.13),
                        rotation=(math.radians(-94), 0, 0), verts=14, r2=0.35))
+    # Большое затылочное отверстие в основании черепа
+    cuts.append(cutter('cylinder', location=(0, -0.14, 1.585),
+                       scale=(0.058, 0.070, 0.09), verts=18))
+    # Слуховые проходы
+    for side in (1, -1):
+        cuts.append(cutter('cylinder',
+                           location=(side * 0.255, -0.115, 1.755),
+                           scale=(0.020, 0.020, 0.09),
+                           rotation=(0, math.radians(90), 0), verts=12))
 
     before = len(braincase.data.vertices)
     braincase = carve(braincase, cuts)
@@ -367,8 +376,101 @@ def skull():
 
     objects = [braincase]
 
+    # --- швы свода черепа ---
+    # Шов лежит тонким валиком по поверхности эллипсоида. Валик, а не
+    # прорезь: на такой кривизне булев вырез шириной 2 мм даёт мусор,
+    # а рельеф читается ничуть не хуже.
+    centre = (0.0, -0.10, 1.90)
+    radii = (0.285, 0.325, 0.30)
+
+    def on_skull(nx, ny, nz, lift=1.004):
+        length = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+        return (centre[0] + radii[0] * lift * nx / length,
+                centre[1] + radii[1] * lift * ny / length,
+                centre[2] + radii[2] * lift * nz / length)
+
+    suture = make_profile('SutureProfile', 0.008, 0.0034)
+
+    # Концы шва сводятся на нет, иначе валик обрывается тупым торцом
+    # и читается как наклеенная проволока, а не как рельеф кости
+    def fade(u):
+        return max(0.06, math.sin(math.pi * u) ** 0.55)
+
+    # Сагиттальный шов: по средней линии от темени назад к ламбде
+    sagittal = [on_skull(0.0, math.sin(math.radians(a)), math.cos(math.radians(a)))
+                for a in range(-62, 46, 6)]
+    objects.append(tube(sagittal, 'SutureSagittal', profile=suture, taper=fade, caps=False))
+
+    # Венечный шов: поперёк свода, наклонён вперёд
+    coronal = []
+    for a in range(-78, 79, 6):
+        t = math.radians(a)
+        b = math.radians(38)
+        coronal.append(on_skull(math.sin(t), math.cos(t) * math.sin(b), math.cos(t) * math.cos(b)))
+    objects.append(tube(coronal, 'SutureCoronal', profile=suture, taper=fade, caps=False))
+
+    # Ламбдовидный шов: две ветви, расходящиеся от ламбды вниз и вбок
+    for side in (1, -1):
+        lambdoid = []
+        for a in range(0, 79, 6):
+            t = math.radians(a * side)
+            b = math.radians(-46 - a * 0.24)
+            lambdoid.append(on_skull(math.sin(t), math.cos(t) * math.sin(b),
+                                     math.cos(t) * math.cos(b)))
+        objects.append(tube(lambdoid, f'SutureLambdoid_{side}', profile=suture, taper=fade, caps=False))
+
+        # Чешуйчатый шов: пологая дуга над височной областью
+        squamous = []
+        for a in range(-52, 53, 6):
+            t = math.radians(a)
+            squamous.append(on_skull(side * 0.94, math.sin(t) * 0.62, -0.02 + math.cos(t) * 0.30))
+        objects.append(tube(squamous, f'SutureSquamous_{side}', profile=suture, taper=fade, caps=False))
+
+    # --- рельеф ---
+    # Надбровные дуги
+    for side in (1, -1):
+        objects.append(prim('sphere', f'BrowRidge_{side}',
+                            location=(side * 0.105, 0.175, 1.885),
+                            scale=(0.085, 0.045, 0.030),
+                            rotation=(0, 0, side * math.radians(-12)),
+                            segments=14, rings=9))
+        # Край глазницы — валик по окружности
+        rim = []
+        for a in range(0, 361, 24):
+            t = math.radians(a)
+            rim.append((side * 0.105 + 0.072 * math.cos(t) * 0.95,
+                        0.196 + 0.012 * math.sin(t),
+                        1.782 + 0.068 * math.sin(t)))
+        objects.append(tube(rim, f'OrbitRim_{side}', radius=0.010, caps=False))
+
+        # Сосцевидный отросток — за слуховым проходом
+        objects.append(prim('cone', f'Mastoid_{side}',
+                            location=(side * 0.215, -0.16, 1.665),
+                            scale=(0.038, 0.038, 0.075),
+                            rotation=(math.radians(190), 0, side * math.radians(-10)),
+                            verts=12, r2=0.3))
+
+    # Наружный затылочный бугор
+    objects.append(prim('sphere', 'InionBump', location=(0, -0.415, 1.80),
+                        scale=(0.055, 0.030, 0.045), segments=14, rings=9))
+    # Носовые кости — спинка носа
+    objects.append(prim('cube', 'NasalBones', location=(0, 0.245, 1.775),
+                        scale=(0.042, 0.055, 0.075),
+                        rotation=(math.radians(-22), 0, 0)))
+    # Подбородочный выступ
+    objects.append(prim('sphere', 'MentalProtuberance', location=(0, 0.225, 1.560),
+                        scale=(0.055, 0.032, 0.040), segments=14, rings=9))
+
     # Скуловые дуги — от щеки к слуховому проходу
     for side in (1, -1):
+        # Тело скуловой кости
+        objects.append(prim('sphere', f'ZygomaticBody_{side}',
+                            location=(side * 0.155, 0.175, 1.720),
+                            scale=(0.052, 0.042, 0.048), segments=14, rings=9))
+        # Угол нижней челюсти
+        objects.append(prim('sphere', f'Gonion_{side}',
+                            location=(side * 0.185, -0.020, 1.578),
+                            scale=(0.040, 0.038, 0.036), segments=14, rings=9))
         objects.append(tube([
             (side * 0.145, 0.20, 1.735),
             (side * 0.245, 0.10, 1.755),
@@ -474,7 +576,104 @@ def pelvis():
 
 def joint(name, location, radius):
     return prim('sphere', name, location=location,
-                scale=(radius, radius, radius * 0.9), segments=14, rings=10)
+                scale=(radius, radius, radius * 0.9), segments=12, rings=8)
+
+
+def hand(side, wrist):
+    """Кисть: запястье, пясть, три фаланги на палец и две на большой."""
+    objects = []
+    wx, wy, wz = wrist
+
+    # Запястье — два ряда мелких костей
+    for row in range(2):
+        for k in range(4):
+            objects.append(prim(
+                'sphere', f'Carpal_{side}_{row}_{k}',
+                location=(wx + side * (k - 1.5) * 0.019,
+                          wy + (k - 1.5) * 0.010 + row * 0.006,
+                          wz - 0.028 - row * 0.030),
+                scale=(0.013, 0.014, 0.014), segments=10, rings=7,
+            ))
+
+    # Четыре длинных пальца: пясть + проксимальная, средняя, дистальная фаланги
+    lengths = [(0.110, 0.062, 0.040, 0.026),
+               (0.116, 0.070, 0.046, 0.028),
+               (0.112, 0.066, 0.042, 0.027),
+               (0.100, 0.052, 0.033, 0.024)]
+    for f in range(4):
+        spread = (f - 1.5)
+        x = wx + side * spread * 0.026
+        y = wy + spread * 0.014
+        z = wz - 0.075
+        meta, prox, mid, dist = lengths[f]
+
+        # Пястная кость
+        objects.append(tube([(x, y, z),
+                             (x + side * spread * 0.008, y + spread * 0.006, z - meta)],
+                            f'Metacarpal_{side}_{f}', radius=0.0115))
+        z -= meta
+        for name, length, r in (('Proximal', prox, 0.0100),
+                                ('Middle', mid, 0.0088),
+                                ('Distal', dist, 0.0076)):
+            objects.append(joint(f'Knuckle_{side}_{f}_{name}', (x, y, z), r * 1.35))
+            objects.append(tube([(x, y, z), (x, y + length * 0.10, z - length)],
+                                f'{name}_{side}_{f}', radius=r,
+                                taper=lambda u: 1.0 - 0.22 * u))
+            z -= length
+
+    # Большой палец отходит в сторону и вперёд
+    tx, ty, tz = wx + side * 0.040, wy + 0.030, wz - 0.055
+    objects.append(tube([(wx + side * 0.018, wy + 0.012, wz - 0.040), (tx, ty, tz)],
+                        f'Metacarpal1_{side}', radius=0.0125))
+    objects.append(joint(f'ThumbJoint_{side}', (tx, ty, tz), 0.014))
+    objects.append(tube([(tx, ty, tz), (tx + side * 0.030, ty + 0.040, tz - 0.040)],
+                        f'ThumbProximal_{side}', radius=0.0105))
+    objects.append(tube([(tx + side * 0.030, ty + 0.040, tz - 0.040),
+                         (tx + side * 0.046, ty + 0.070, tz - 0.062)],
+                        f'ThumbDistal_{side}', radius=0.0088))
+    return objects
+
+
+def foot(side, ankle):
+    """Стопа: пяточная и таранная кости, плюсна, фаланги пальцев."""
+    objects = []
+    ax, ay, az = ankle
+
+    # Таранная и пяточная кости
+    objects.append(prim('sphere', f'Talus_{side}', location=(ax, ay + 0.010, az - 0.030),
+                        scale=(0.040, 0.044, 0.032), segments=12, rings=8))
+    # Пяточный бугор вытянут назад и вниз, а не шарообразен
+    objects.append(prim('sphere', f'Calcaneus_{side}',
+                        location=(ax, ay - 0.070, az - 0.082),
+                        scale=(0.042, 0.088, 0.040),
+                        rotation=(math.radians(14), 0, 0), segments=14, rings=9))
+    # Свод предплюсны
+    for k in range(3):
+        objects.append(prim('sphere', f'Tarsal_{side}_{k}',
+                            location=(ax + side * (k - 1) * 0.026, ay + 0.070, az - 0.078),
+                            scale=(0.020, 0.024, 0.022), segments=10, rings=7))
+
+    # Плюсна и фаланги
+    lengths = [(0.128, 0.044, 0.026), (0.132, 0.038, 0.020), (0.126, 0.034, 0.019),
+               (0.118, 0.030, 0.018), (0.104, 0.024, 0.016)]
+    for t in range(5):
+        spread = (t - 2)
+        x = ax + side * spread * 0.030
+        y = ay + 0.095
+        z = az - 0.086
+        meta, prox, dist = lengths[t]
+
+        objects.append(tube([(x, y, z), (x + side * spread * 0.006, y + meta, z - 0.012)],
+                            f'Metatarsal_{side}_{t}', radius=0.0155 if t == 0 else 0.0125))
+        y += meta
+        z -= 0.012
+        for name, length, r in (('ToeProximal', prox, 0.0125 if t == 0 else 0.0102),
+                                ('ToeDistal', dist, 0.0108 if t == 0 else 0.0086)):
+            objects.append(joint(f'ToeJoint_{side}_{t}_{name}', (x, y, z), r * 1.3))
+            objects.append(tube([(x, y, z), (x, y + length, z - 0.004)],
+                                f'{name}_{side}_{t}', radius=r))
+            y += length
+    return objects
 
 
 def limbs():
@@ -498,14 +697,8 @@ def limbs():
                              (side * 0.715, SPINE_Y + 0.315, -0.27),
                              (side * 0.745, SPINE_Y + 0.395, -0.61)],
                             f'Radius_{side}', radius=0.026))
-        objects.append(joint(f'Carpus_{side}', wrist, 0.042))
-        # Пясть и пальцы
-        for f in range(4):
-            off = (f - 1.5) * 0.036
-            objects.append(tube([
-                (side * 0.78 + off * 0.4, SPINE_Y + 0.34 + off, -0.66),
-                (side * 0.79 + off * 0.6, SPINE_Y + 0.35 + off * 1.4, -0.90),
-            ], f'Finger_{side}_{f}', radius=0.013))
+        objects.append(joint(f'Carpus_{side}', wrist, 0.036))
+        objects += hand(side, wrist)
 
         # --- нога ---
         hip = (side * 0.255, SPINE_Y + 0.31, -1.57)
@@ -525,16 +718,32 @@ def limbs():
         objects.append(tube([(side * 0.305, SPINE_Y + 0.33, -2.70),
                              (side * 0.295, SPINE_Y + 0.32, -3.55)],
                             f'Fibula_{side}', radius=0.022))
-        objects.append(joint(f'Ankle_{side}', ankle, 0.048))
-        # Стопа
-        objects.append(tube([ankle,
-                             (side * 0.225, SPINE_Y + 0.45, -3.70),
-                             (side * 0.225, SPINE_Y + 0.62, -3.73)],
-                            f'Foot_{side}', radius=0.038,
-                            taper=lambda u: 1.0 - 0.35 * u))
-        objects.append(prim('cube', f'Heel_{side}',
-                            location=(side * 0.225, SPINE_Y + 0.24, -3.70),
-                            scale=(0.07, 0.10, 0.07)))
+        objects.append(joint(f'Ankle_{side}', ankle, 0.042))
+        objects += foot(side, ankle)
+
+        # Надколенник
+        objects.append(prim('sphere', f'Patella_{side}',
+                            location=(side * 0.235, SPINE_Y + 0.415, -2.60),
+                            scale=(0.042, 0.020, 0.048), segments=12, rings=8))
+        # Большой вертел бедренной кости
+        objects.append(prim('sphere', f'Trochanter_{side}',
+                            location=(side * 0.335, SPINE_Y + 0.28, -1.63),
+                            scale=(0.048, 0.042, 0.052), segments=12, rings=8))
+        # Мыщелки бедра и лодыжки
+        for k, off in ((0, 0.048), (1, -0.048)):
+            objects.append(prim('sphere', f'FemoralCondyle_{side}_{k}',
+                                location=(side * (0.235 + off), SPINE_Y + 0.36, -2.64),
+                                scale=(0.034, 0.040, 0.034), segments=10, rings=7))
+        objects.append(prim('sphere', f'MedialMalleolus_{side}',
+                            location=(side * 0.185, SPINE_Y + 0.34, -3.59),
+                            scale=(0.026, 0.030, 0.040), segments=10, rings=7))
+        objects.append(prim('sphere', f'LateralMalleolus_{side}',
+                            location=(side * 0.296, SPINE_Y + 0.325, -3.60),
+                            scale=(0.024, 0.028, 0.044), segments=10, rings=7))
+        # Локтевой отросток
+        objects.append(prim('sphere', f'Olecranon_{side}',
+                            location=(side * 0.735, SPINE_Y + 0.135, 0.125),
+                            scale=(0.032, 0.036, 0.040), segments=10, rings=7))
 
     return objects
 
@@ -574,7 +783,9 @@ def main():
     # Бюджет полигонов: модель грузится в hero, поэтому вес важнее
     # микродеталей. Collapse-децимация на сглаженных формах незаметна.
     tris_before = sum(len(p.vertices) - 2 for p in merged.data.polygons)
-    budget = 42000
+    # Мелкие кости (фаланги, швы, запястье) collapse-децимация съедает
+    # первыми, поэтому бюджет поднят: ниже 55k пальцы теряют форму
+    budget = 60000
     if tris_before > budget:
         activate(merged)
         dec = merged.modifiers.new('decimate', 'DECIMATE')
